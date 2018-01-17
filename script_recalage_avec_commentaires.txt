@@ -1,0 +1,71 @@
+################# S1 SLC processing
+
+# decompress one S1 image 
+unzip S1B_IW_SLC__1SDV_20170826T172225_20170826T172252_007114_00C898_5146.zip
+
+# decompress all available images  
+ls *.zip > data_list.txt
+run_all data_list.txt 'unzip $1'
+
+# generate SLC image and SLC parameter file
+par_S1_SLC s1b-iw2-slc-vh-20161123t172224-20161123t172249-003089-005402-002.tiff ../annotation/s1b-iw2-slc-vh-20161123t172224-20161123t172249-003089-005402-002.xml ../annotation/calibration/calibration-s1b-iw2-slc-vh-20161123t172224-20161123t172249-003089-005402-002.xml ../annotation/calibration/noise-s1b-iw2-slc-vh-20161123t172224-20161123t172249-003089-005402-002.xml 20161123.IW2.slc.par 20161123.IW2.slc 20161123.IW2.slc.TOPS_par
+
+# burst selection (2 for S1A, 4 for S1B), suitable for multiple burst selection and there is a TOP_par file in output (needed by S1_coreg_TOPS later)
+SLC_copy_S1_TOPS 20161123.SLC_tab_input 20161123.SLC_tab_output 20161123.burst_tab 0
+
+# then use the command below to deramp (see S1 processing doc, not really necessary)
+SLC_deramp_S1_TOPS
+
+# selection of one burst, there is no TOP_par file in output
+SLC_burst_copy 20161123.IW2.slc 20161123.IW2.slc.par 20161123.IW2.slc.TOPS_par 20161123_b4.IW2.slc 20161123_b4.IW2.slc.par 4 1 20161123_b4_deramp.IW2.slc.par # with deramp option
+
+# generate multi-looking image, 4 looks in range and 1 look in azimuth in order to get 20 m resolution cell on the ground
+multi_look 20161123_b4.IW2.slc 20161123_b4_deramp.IW2.slc.par 20161123_b4.IW2.mli 20161123_b4.IW2.mli.par 4 1 0
+
+########### coregistration of 2 images, master date 20170104, slave image 20161229 ############################
+# generate a DEM segment that covers the area specified in 20170104.mli.par and the look up table (LUT) between the radar geometry (master SAR image) and geographical geometry (lat/lon, DEM) 
+
+gc_map ./20170104/20170104.mli.par - ../montblanc.dem_par ../montblanc.dem 20170104.dem_par 20170104.dem 20170104.lt 1.5 1.5 20170104.sim_sar u v inc psi pix ls_map 8 2
+
+# generate a simulated multi-looking (elevation based) image in the geometry of the master image from the DEM. Normally, there is a good match between the simulated image and the multi-looing image. The shift between these two images is used to refine the LUT  (see commands below)
+
+pixel_area ./20170104/20170104.mli.par 20170104.dem_par 20170104.dem 20170104.lt ls_map inc pix_sigma0 pix_gamma0
+
+# generate a diff parameter file from the master image parameter file
+create_diff_par ./20170104/20170104.mli.par - 20170104.diff_par 1 0
+
+# compare the simulated image and the multi-looing image by correlation, determine the offset between these two images
+
+offset_pwrm pix_sigma0 ./20170104/20170104.mli 20170104.diff_par 20170104.offs 20170104.ccp 256 64 offsets 1 64 64 0.1 7 - 0 0
+
+# estimate the offset in range and azimuth directions and save info in diff file
+
+offset_fitm 20170104.offs 20170104.ccp 20170104.diff_par coffs coffsets 0.1 1
+
+# refine the LUT by the offset info in the diff file
+
+gc_map_fine 20170104.lt 6922 20170104.diff_par 20170104.lt_fine 1
+
+# resimulate the multi-looing image with the refined LUT for check
+
+pixel_area ./20170104/20170104.mli.par 20170104.dem_par 20170104.dem 20170104.lt_fine ls_map inc pix_sigma0 pix_gamma0
+
+# resample the DEM segment to SAR geometry
+
+geocode 20170104.lt_fine 20170104.dem 6922 20170104.hgt 6468 1509 2 0
+run_all S1B_12j_b5.txt 'offset_pwr_tracking ./RSLC_temp/$1.rslc ./RSLC_temp/$2.rslc ./RSLC_temp/$1.rslc.par ./RSLC_temp/$2.rslc.par ./OFF_temp/$1_$2.off ./OFF_temp/$1_$2.offs ./OFF_temp/$1_$2.ccp 256 64 - 1 - 4 1 - - - - 6'
+# generate the offset file between the master and the slave image
+create_offset ./20170104/20170104.slc.par ./20161229/20161229.slc.par 20170104_20161229.off 1 4 1 0
+
+# resample the slave image into the geometry of the master image, S1_coreg_TOPS calls a series of commands in iterative way.
+# main steps in SLC_coreg_TOPS: 1. generate a LUT that allows for the geometry transformation between the master and the slave images 2. with the LUT, generate a simulated slave image from the master image 3. compute the offset between the simulated slave image and the real slave image, then use the offset to refine the LUT 4. resample the slave image in the master geometry. If necessary, redo these steps in iterative way. The number of iteration depends on the coregistration precision given by users.
+
+S1_coreg_TOPS 20170104.slc_tab 20170104 20161229.slc_tab 20161229 20161229.rslc_tab 20170104.hgt 4 1 - - 0.8 0.001 0.8 1
+
+run_all 'offset_pwr_tracking ../RSLC/$1.rslc ../RSLC/$2.rslc ../RSLC/$1.rslc.par ../RSLC/$2.rslc.par ./S1A/$1_$2.off ./S1A/$1_$2.offs ./S1A/$1_$2.ccp 256 64 - 1 - 4 1 - - - - 6'
+
+run_all ../script/dates_ms_S1B_b5.txt 'S1_coreg_TOPS ./$1/$1.slc_tab $1 ./$2/$2.slc_tab $2 ./$2/$2.rslc_tab ./$1/$1.hgt 4 1 - - 0.8 0.001 0.8 1'
+
+
+
+

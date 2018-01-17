@@ -1,0 +1,219 @@
+
+############################################################# offset tracking from SLC
+##################### example for a pair of images #####################
+# generate off file
+
+create_offset ./RSLC/20161217.rslc.par ./RSLC/20170104.rslc.par /home/yyan/nas_mastodons/yyan/offset_alpes/offset/20161217_20170104.off 1 4 1 0
+
+# compute the first offset, important paramters, search window size [256, 64] multilooking factor of output [4, 1]
+
+offset_pwr_tracking ./RSLC/20170104.rslc ./RSLC/20161217.rslc ./RSLC/20170104.rslc.par ./RSLC/20161217.rslc.par ./offset/20170104_20161217.off /home/yyan/nas_mastodons/yyan/offset_alpes/20170104_20161217.offs /home/yyan/nas_mastodons/yyan/offset_alpes/20170104_20161217.ccp 256 64 - 1 - 4 1 - - - - 6
+
+# separete range and azimuth
+cpx_to_real 20170104_20161217.offs 20170104_20161217.offs.range 6468 0
+cpx_to_real 20170104_20161217.offs 20170104_20161217.offs.azimuth 6468 1
+
+# visualization of range/azimuth component for check
+dishgt 20170104_20161217.offs.range /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/mli/alpes_asc88.ave 6468 - - - 1
+
+# make mask, thresholding on offset values and correlation peak value (ccp), ccp threshold 0.2 for Swiss glacier, 0.4 for Argentiere and Mer de Glace
+single_class_mapping 3 20161006_20161018.ccp 0.2 1.0 20161006_20161018.offs.range -1 1 20161006_20161018.offs.az -1 1 20161006_20161018.mask.bmp 6468 1 0 1 1
+
+# apply mask to range/azimuth offsets
+mask_class 20170104_20161217.mask.bmp 20170104_20161217.offs.range 20170104_20161217.offs.range.masked 0 1 1 1 0 0
+mask_class 20170104_20161217.mask.bmp 20170104_20161217.offs.azimuth 20170104_20161217.offs.azimuth.masked 0 1 1 1 0 0
+
+# median filter to range/azimuth offsets
+
+median_filter 20170104_20161217.offs.range.masked 20170104_20161217.offs.range.masked.median 6468 7 7 15
+
+median_filter 20170104_20161217.offs.azimuth.masked 20170104_20161217.offs.azimuth.masked.median 6468 7 7 15
+
+# compute the difference between filtered offset and non filtered offset
+
+lin_comb 2 20170104_20161217.offs.range.masked 20170104_20161217.offs.range.masked.median 0 1 -1 20170104_20161217.offs.range.masked_median 6468 1 0 1 1 1
+
+lin_comb 2 20170104_20161217.offs.azimuth.masked 20170104_20161217.offs.azimuth.masked.median 0 1 -1 20170104_20161217.offs.azimuth.masked_median 6468 1 0 1 1 1
+
+# for visu
+dis2hgt 20170104_20161217.offs.range.masked 20170104_20161217.offs.range.masked.median 6468 6468 1 0 0 0 0.5 
+
+# generate new mask, thresholding on offset values, correlation peak and median difference (filtered - non filtered)
+single_class_mapping 5 20170104_20161217.offs.range.masked_median -1 1 20170104_20161217.offs.az.masked_median -1 1 20170104_20161217.ccp 0.2 1.0 20170104_20161217.offs.range -1 1 20170104_20161217.offs.az -1 1 20170104_20161217.mask2.bmp 6468 1 0 1 1
+
+# apply mask
+mask_class 20170104_20161217.mask2.bmp 20170104_20161217.offs.range 20170104_20161217.offs.range.masked2 0 1 1 1 0 0
+mask_class 20170104_20161217.mask2.bmp 20170104_20161217.offs.az 20170104_20161217.offs.az.masked2 0 1 1 1 0 0
+
+# OPTIONAL !!! low pass filtering, necessary in case of smaller window
+
+fspf 20170104_20161217.offs.range.masked2.interp 20170104_20161217.offs.range.masked2.interp.fspf 6468 2 7 2 
+run_all bperp_file_12d.txt 'fspf $2_$3.offs.range.masked2.interp $2_$3.offs.range.masked2.interp.fspf 6468 2 7 2'
+
+fspf 20170104_20161217.offs.az.masked2.interp 20170104_20161217.offs.az.masqked2.interp.fspf 6468 2 7 2 
+run_all bperp_file_12d.txt 'fspf $2_$3.offs.az.masked2.interp $2_$3.offs.az.masked2.interp.fspf 6468 2 7 2'
+
+# combine offsets into complex value for second round estimation
+
+real_to_cpx 20170104_20161217.offs.range.masked2 20170104_20161217.offs.az.masked2 20170104_20161217.offs.condi 6468 0
+
+#################### second round (iteration) estimation of offset
+# generate off file
+create_offset ./RSLC/20161217.rslc.par ./RSLC/20170104.rslc.par /home/yyan/nas_mastodons/yyan/offset_alpes/offset/20170104_20161217.off2 1 4 1 0
+
+# estimate offsets 
+offset_pwr_tracking2 ./RSLC/20161006.rslc ./RSLC/20161018.rslc ./RSLC/20161006.rslc.par ./RSLC/20161018.rslc.par /home/yyan/nas_mastodons/yyan/offset_alpes/offset/20161006_20161018.off2 /home/yyan/nas_mastodons/yyan/offset_alpes/12d_serie1/20161006_20161018.offs2 /home/yyan/nas_mastodons/yyan/offset_alpes/12d_serie1/20161006_20161018.ccp2 /home/yyan/nas_mastodons/yyan/offset_alpes/offset/20161006_20161018.off /home/yyan/nas_mastodons/yyan/offset_alpes/12d_serie1/20161006_20161018.offs.condi 256 64 - 1 - 4 1 - - - - -
+
+# separte range/azimuth offset
+
+cpx_to_real 20161006_20161018.offs2 20161006_20161018.offs2.range 6468 0
+cpx_to_real 20161006_20161018.offs2 20161006_20161018.offs2.azimuth 6468 1
+
+# for visu
+dishgt 20161006_20161018.offs2.range /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/mli/alpes_asc88.ave 6468 - - - 1
+
+# make mask
+
+single_class_mapping 3 20161006_20161018.ccp2 0.2 1.0 20161006_20161018.offs2.range -1 1 20161006_20161018.offs2.az -1 1 20161006_20161018.mask2.bmp 6468 1 0 1 1
+
+# apply mask
+mask_class 20161006_20161018.mask2.bmp 20161006_20161018.offs2.range 20161006_20161018.offs2.range.masked 0 1 1 1 0 0
+mask_class 20161006_20161018.mask2.bmp 20161006_20161018.offs2.az 20161006_20161018.offs2.az.masked 0 1 1 1 0 0
+
+# for visu
+dishgt 20161006_20161018.offs2.range.masked /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/mli/alpes_asc88.ave 6468 - - - 1
+
+# median filter
+median_filter 20161006_20161018.offs2.range.masked 20161006_20161018.offs2.range.median2 6468 7 7 15
+median_filter 20161006_20161018.offs2.az.masked 20161006_20161018.offs2.az.median2 6468 7 7 15
+
+# diff(filtered - non filtered)
+
+lin_comb 2 20161006_20161018.offs2.range.masked 20161006_20161018.offs2.range.median2 0. 1. -1. 20161006_20161018.offs2.range.masked_median 6468 1 0 1 1
+lin_comb 2 20161006_20161018.offs2.az.masked 20161006_20161018.offs2.az.median2 0. 1. -1. 20161006_20161018.offs2.az.masked_median 6468 1 0 1 1
+
+# make mask
+single_class_mapping 5 20161006_20161018.offs2.range.masked_median -1 1 20161006_20161018.offs2.az.masked_median -1 1 20161006_20161018.ccp2 0.2 1.0 20161006_20161018.offs2.range -1 1  20161006_20161018.offs2.az -1 1 20161006_20161018.mask22.bmp 6468 1 0 1 1
+
+# apply mask
+
+mask_class 20161006_20161018.mask22.bmp 20161006_20161018.offs2.range 20161006_20161018.offs2.range.masked2 0 1 1 1 0 0
+mask_class 20161006_20161018.mask22.bmp 20161006_20161018.offs2.az 20161006_20161018.offs2.az.masked2 0 1 1 1 0 0
+
+# regenerate complex offset file for later use
+real_to_cpx 20161006_20161018.offs2.range.masked2 20161006_20161018.offs2.az.masked2 20161006_20161018.offs2.condi 6468 0
+
+# convert offset to meter (attention to slant range or ground range option)
+
+offset_tracking 20161006_20161018.offs2.condi 20161006_20161018.ccp2 /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/RSLC/20161006.rslc.par ../offset/20161006_20161018.off 20161006_20161018.disp_map - 1 0.2 0 # slant range & azimuth
+
+# select range/azmimuth/magnitude 
+cpx_to_real 20161006_20161018.disp_map 20161006_20161018.disp_map.range 6468 0
+cpx_to_real 20161006_20161018.disp_map 20161006_20161018.disp_map.az 6468 1
+cpx_to_real 20161006_20161018.disp_map 20161006_20161018.disp_map.mag 6468 3
+
+# for visu
+dishgt 20161006_20161018.disp_map.rang /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/mli/alpes_asc88.ave 6468 - - - 2
+
+################### example for all images ###################
+
+run_all /home/yyan/nas_mastodons/yyan/offset_alpes/bperp_file_12d.txt 'create_offset ./RSLC/$2.rslc.par ./RSLC/$3.rslc.par /home/yyan/nas_mastodons/yyan/offset_alpes/offset/$2_$3.off 1 4 1 0'
+
+run_all /home/yyan/nas_mastodons/yyan/offset_alpes/bperp_file_12d.txt 'offset_pwr_tracking ./RSLC/$2.rslc ./RSLC/$3.rslc ./RSLC/$2.rslc.par ./RSLC/$3.rslc.par /home/yyan/nas_mastodons/yyan/offset_alpes/offset/$2_$3.off /home/yyan/nas_mastodons/yyan/offset_alpes/$2_$3.offs /home/yyan/nas_mastodons/yyan/offset_alpes/$2_$3.ccp 256 64 - 1 - 4 1 - - - - 6'
+
+run_all bperp_file_12d.txt 'cpx_to_real $2_$3.offs $2_$3.offs.range 6468 0'
+run_all bperp_file_12d.txt 'cpx_to_real $2_$3.offs $2_$3.offs.az 6468 1'
+
+dishgt 20170104_20161217.offs.range /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/mli/alpes_asc88.ave 6468 - - - 1
+
+run_all bperp_file_12d.txt 'single_class_mapping 3 $2_$3.ccp 0.2 1.0 $2_$3.offs.range -1 1 $2_$3.offs.az -1 1 $2_$3.mask.bmp 6468 1 0 1 1'
+
+run_all bperp_file_12d.txt 'mask_class $2_$3.mask.bmp $2_$3.offs.range $2_$3.offs.range.masked 0 1 1 1 0 0'
+run_all bperp_file_12d.txt 'mask_class $2_$3.mask.bmp $2_$3.offs.az $2_$3.offs.az.masked 0 1 1 1 0 0'
+
+run_all bperp_file_12d.txt 'median_filter $2_$3.offs.range.masked $2_$3.offs.range.masked.median 6468 7 7 15'
+
+run_all bperp_file_12d.txt 'lin_comb 2 $2_$3.offs.range.masked $2_$3.offs.range.masked.median 0 1 -1 $2_$3.offs.range.masked_median 6468 1 0 1 1 1'
+
+run_all bperp_file_12d.txt 'median_filter $2_$3.offs.az.masked $2_$3.offs.az.masked.median 6468 7 7 15'
+
+run_all bperp_file_12d.txt 'lin_comb 2 $2_$3.offs.az.masked $2_$3.offs.az.masked.median 0 1 -1 $2_$3.offs.az.masked_median 6468 1 0 1 1 1'
+
+run_all bperp_file_12d.txt 'single_class_mapping 5 $2_$3.offs.range.masked_median -0.1 0.1 $2_$3.offs.az.masked_median -0.1 0.1 $2_$3.ccp 0.2 1.0 $2_$3.offs.range -1 1 $2_$3.offs.az -1 1 $2_$3.mask2.bmp 6468 1 0 1 1'
+
+run_all bperp_file_12d.txt 'mask_class $2_$3.mask2.bmp $2_$3.offs.range $2_$3.offs.range.masked2 0 1 1 1 0 0'
+run_all bperp_file_12d.txt 'mask_class $2_$3.mask2.bmp $2_$3.offs.az $2_$3.offs.az.masked2 0 1 1 1 0 0'
+
+dis2ras 20170104_20161217.mask.bmp 20170104_20161217.mask2.bmp
+
+
+run_all bperp_file_12d.txt 'real_to_cpx $2_$3.offs.range.masked2 $2_$3.offs.az.masked2 $2_$3.offs.condi 6468 0'
+
+############################################################# second round of offset calculation
+
+run_all /home/yyan/nas_mastodons/yyan/offset_alpes/12d_serie1/bperp_file_12d.txt 'create_offset ./RSLC/$2.rslc.par ./RSLC/$3.rslc.par /home/yyan/nas_mastodons/yyan/offset_alpes/offset/$2_$3.off2 1 4 1 0'
+
+run_all /home/yyan/nas_mastodons/yyan/offset_alpes/12d_serie1/bperp_file_12d.txt 'offset_pwr_tracking2 ./RSLC/$2.rslc ./RSLC/$3.rslc ./RSLC/$2.rslc.par ./RSLC/$3.rslc.par /home/yyan/nas_mastodons/yyan/offset_alpes/offset/$2_$3.off2 /home/yyan/nas_mastodons/yyan/offset_alpes/12d_serie1/$2_$3.offs2 /home/yyan/nas_mastodons/yyan/offset_alpes/12d_serie1/$2_$3.ccp2 /home/yyan/nas_mastodons/yyan/offset_alpes/offset/$2_$3.off /home/yyan/nas_mastodons/yyan/offset_alpes/12d_serie1/$2_$3.offs.condi 256 64 - 1 - 4 1 - - - - -'
+
+run_all bperp_file_12d.txt 'cpx_to_real $2_$3.offs2 $2_$3.offs2.range 6468 0'
+run_all bperp_file_12d.txt 'cpx_to_real $2_$3.offs2 $2_$3.offs2.az 6468 1'
+
+dishgt 20161006_20161018.offs2.range /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/mli/alpes_asc88.ave 6468 - - - 1
+
+run_all bperp_file_12d.txt 'single_class_mapping 3 $2_$3.ccp2 0.2 1.0 $2_$3.offs2.range -1 1 $2_$3.offs2.az -1 1 $2_$3.mask2.bmp 6468 1 0 1 1'
+
+run_all bperp_file_12d.txt 'mask_class $2_$3.mask2.bmp $2_$3.offs2.range $2_$3.offs2.range.masked 0 1 1 1 0 0'
+run_all bperp_file_12d.txt 'mask_class $2_$3.mask2.bmp $2_$3.offs2.az $2_$3.offs2.az.masked 0 1 1 1 0 0'
+
+dishgt 20161006_20161018.offs2.range.masked /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/mli/alpes_asc88.ave 6468 - - - 1
+
+run_all bperp_file_12d.txt 'median_filter $2_$3.offs2.range.masked $2_$3.offs2.range.median2 6468 7 7 15'
+run_all bperp_file_12d.txt 'median_filter $2_$3.offs2.az.masked $2_$3.offs2.az.median2 6468 7 7 15'
+
+run_all bperp_file_12d.txt 'lin_comb 2 $2_$3.offs2.range.masked $2_$3.offs2.range.median2 0. 1. -1. $2_$3.offs2.range.masked_median 6468 1 0 1 1'
+run_all bperp_file_12d.txt 'lin_comb 2 $2_$3.offs2.az.masked $2_$3.offs2.az.median2 0. 1. -1. $2_$3.offs2.az.masked_median 6468 1 0 1 1'
+
+run_all bperp_file_12d.txt 'single_class_mapping 5 $2_$3.offs2.range.masked_median -1 1 $2_$3.offs2.az.masked_median -1 1 $2_$3.ccp2 0.2 1.0 $2_$3.offs2.range -1 1 $2_$3.offs2.az -1 1 $2_$3.mask22.bmp 6468 1 0 1 1'
+
+run_all bperp_file_12d.txt 'mask_class $2_$3.mask22.bmp $2_$3.offs2.range $2_$3.offs2.range.masked2 0 1 1 1 0 0'
+run_all bperp_file_12d.txt 'mask_class $2_$3.mask22.bmp $2_$3.offs2.az $2_$3.offs2.az.masked2 0 1 1 1 0 0'
+
+
+# convert offsets to meters
+
+############## no low pass filter here ###################
+ 
+run_all bperp_file_12d.txt 'real_to_cpx $2_$3.offs2.range.masked2.interp $2_$3.offs2.az.masked2.interp $2_$3.offs2.condi 6468 0'
+
+run_all bperp_file_12d.txt 'offset_tracking $2_$3.offs2.condi $2_$3.ccp2 /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/RSLC/$2.rslc.par ../offset/$2_$3.off $2_$3.disp_map - 1 0.2 0'
+
+run_all bperp_file_12d.txt 'cpx_to_real $2_$3.disp_map $2_$3.disp_map.range 6468 0'
+run_all bperp_file_12d.txt 'cpx_to_real $2_$3.disp_map $2_$3.disp_map.az 6468 1'
+run_all bperp_file_12d.txt 'cpx_to_real $2_$3.disp_map $2_$3.disp_map.mag 6468 3'
+
+dishgt 20161006_20161018.disp_map.rang /home/yyan/nas_mastodons/jauvinm/Chamonix/Ascending/88/mli/alpes_asc88.ave 6468 - - - 2
+
+########################### generate mask over glacier
+# draw mask polygon with the mouse, right click from a raster image
+polyras alpes_asc88.ave.ras - - > mask_glacier_fine.txt 
+
+# generate mask image
+drawthat alpes_asc88.ave.ras alpes_asc88.ave.ras.mask mask_glacier_fine.txt 1 - - 255 - 1
+
+# 
+########## need to thresholding ccp (to check the thresholding value), then mask_op to combine masks to generate definitive mask
+
+single_class_mapping 1 20161006_20161018.ccp2 0.4 1.0 20161006_20161018.mask_ccp 6468 1 0 1 1
+
+mask_op 20161006_20161018.mask_ccp alpes_asc88.ave.ras.mask 20161006_20161018.mask_final 1
+
+###########
+
+# apply mask
+run_all bperp_file_12d.txt 'mask_class alpes_asc88.ave.mask.final $2_$3.disp_map.range $2_$3.disp_map.range_masked 0 1 -1 1 255'
+run_all bperp_file_12d.txt 'mask_class alpes_asc88.ave.mask.final $2_$3.disp_map.az $2_$3.disp_map.az_masked 0 1 -1 1 255'
+
+
+
+
+
