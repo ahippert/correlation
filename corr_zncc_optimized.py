@@ -72,15 +72,12 @@ def sub_pixel_interp(A, B, sim_peak, posX, posY):
 
     return XO, YO
         
-# -----------------------------------------------------------
-# Function : correlation_ZNCC()
-# -----------------------------------------------------------
-
+    
 def correlation_ZNCC(masterImage, slaveImage, corr_window, research_window, line_start, col_start, line_width, col_width, A, B) :
 
     im_step = 1
     research_step = 1
-    savefig = 0
+    savefig = 1
 
     compute_similarity = 'py'
     #compute_similarity ='c'
@@ -89,10 +86,11 @@ def correlation_ZNCC(masterImage, slaveImage, corr_window, research_window, line
                'mer_glace' :{'line_start':880, 'col_start':760, 'line_width':70, 'col_width':130},
                'test':{'line_start':880, 'col_start':760, 'line_width' : 20, 'col_width' : 30}}
 
+    peak_size = 2*(research_window-corr_window)
     peak = np.ndarray((line_width, col_width))
     disX = np.ndarray((line_width, col_width))
     disY = np.ndarray((line_width, col_width))
-    sim_peak = np.ndarray((2*research_window+1,2*research_window+1))
+    sim_peak = np.ndarray((peak_size+1, peak_size+1))
     displacementVector = np.ndarray((line_width, col_width))
     residualMapX = np.ndarray((line_width, col_width))
     residualMapY = np.ndarray((line_width, col_width))
@@ -112,8 +110,8 @@ def correlation_ZNCC(masterImage, slaveImage, corr_window, research_window, line
             avgMaster = get_mean(masterImage, x, y, corr_window)
         
             # slide in research window
-            for p in range(-research_window, research_window + 1, research_step):
-                for q in range(-research_window, research_window + 1, research_step):
+            for p in range(-peak_size/2, peak_size/2 + 1, research_step):
+                for q in range(-peak_size/2, peak_size/2 + 1, research_step):
 
                     # correlation terms initialization 
                     c1, c2, c3 = (0,)*3
@@ -130,20 +128,20 @@ def correlation_ZNCC(masterImage, slaveImage, corr_window, research_window, line
                             c3 += (slaveImage[x+p+i][y+q+j] - avgSlave)**2
 
                     if (c2 != 0 and c3 != 0) :
-                        sim_peak[p+research_window][q+research_window] = float(c1)/((c2*c3)**0.5)
+                        sim_peak[p+peak_size/2][q+peak_size/2] = float(c1)/((c2*c3)**0.5)
                     else :
-                        sim_peak[p+research_window][q+research_window] = None
+                        sim_peak[p+peak_size/2][q+peak_size/2] = None
                         print('Invalid value encountered in similarity peak')
 
-                    # recherche du maximum de similarite par comparaisons successives (style code C)
+                    # recherche du maximum de similarite par comparaisons successives
                     if compute_similarity == 'c' :
-                        if sim_peak[p+research_window][q+research_window] >= sim:
-                            sim = sim_peak[p+research_window][q+research_window]
+                        if sim_peak[p+peak_size/2][q+peak_size/2] >= sim:
+                            sim = sim_peak[p+peak_size/2][q+peak_size/2]
                         else:
                             sim = sim
                         peak[x-line_start][y-col_start] = sim
 
-            # recherche du maximum de similarite avec fonction max() (style code python)
+            # recherche du maximum de similarite avec fonction max()
             if compute_similarity == 'py' :
                 peak[x-line_start][y-col_start] = np.max(sim_peak)
             
@@ -168,16 +166,16 @@ def correlation_ZNCC(masterImage, slaveImage, corr_window, research_window, line
             
     print("computation time: %s s" %round(time.time() - start_time))
 
-    #
     # graphics
-    #
+
     plt.figure(1)
     im = plt.imshow(peak)
     plt.colorbar(im)
     plt.title("image size=(%d*%d) ; n=%d ; m=%d" %(line_width, col_width, 2*corr_window+1, 2*research_window+1))
 
     if savefig :
-        plt.savefig('/home/hipperta/nas_mastodons/hipperta/script/img/simpeak_xy%d%d_n%d_m%d.png' %(line_width, col_width, 2*corr_window+1, 2*research_window+1))
+        plt.savefig('/home/hipperta/corr/python/simpeak_xy%d%d_n%d_m%d.png' %(line_width, col_width, 2*corr_window+1, 2*research_window+1))
+
 
     plt.figure(2)
     im1 = plt.imshow(sim_peak)
